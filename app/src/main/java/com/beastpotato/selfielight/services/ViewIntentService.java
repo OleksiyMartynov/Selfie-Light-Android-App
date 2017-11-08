@@ -15,9 +15,11 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import com.beastpotato.selfielight.R;
+import com.beastpotato.selfielight.utils.PreffsHelper;
 
 
 public class ViewIntentService extends IntentService {
@@ -73,19 +75,37 @@ public class ViewIntentService extends IntentService {
         if(onTopView==null) {
             LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
             onTopView = inflater.inflate(R.layout.layout_selfie_light,null);
+            boolean isCircle = PreffsHelper.getInstance().isCurrentViewCircle(getApplicationContext());
+            setImage(isCircle);
         }
         try {
-            Display display = wm.getDefaultDisplay();
-            Point point = new Point();
-            display.getSize(point);
-            wm.addView(onTopView, getParams(point.x>point.y?point.y:point.x));
+
+            wm.addView(onTopView, getParams(getDisplayWidth(wm)));
             onTopView.setOnTouchListener(new ViewTouchListener(wm));
-//            PhotoViewAttacher photoViewAttacher =  new PhotoViewAttacher(onTopView.findViewById(R.id.selfie_light_image_view));
-//            photoViewAttacher.setMinimumScale(0.5f);
-//            photoViewAttacher.update();
+            onTopView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    boolean isCircle = !PreffsHelper.getInstance().isCurrentViewCircle(getApplicationContext());
+                    setImage(isCircle);
+                }
+            });
+
         }catch (Exception e){
             e.printStackTrace();
         }
+    }
+
+    private int getDisplayWidth(WindowManager wm){
+        Display display = wm.getDefaultDisplay();
+        Point point = new Point();
+        display.getSize(point);
+        return point.x>point.y?point.y:point.x;
+    }
+
+    private void setImage(boolean isCircle) {
+        ImageView iv = onTopView.findViewById(R.id.selfie_light_image_view);
+        PreffsHelper.getInstance().setCurrentViewCircle(getApplicationContext(),isCircle);
+        iv.setImageResource(isCircle?R.drawable.ic_selfie_light:R.drawable.ic_selfie_light_rect);
     }
 
 
@@ -95,6 +115,7 @@ public class ViewIntentService extends IntentService {
     private void hideUI(WindowManager wm){
         try{
             wm.removeView(onTopView);
+            onTopView=null;
         }catch (Exception e){
             e.printStackTrace();
         }
@@ -114,6 +135,10 @@ public class ViewIntentService extends IntentService {
         else
             params.type = WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
         return params;
+    }
+
+    public static boolean isActive() {
+        return onTopView!=null;
     }
 
     private class ViewTouchListener implements View.OnTouchListener {
@@ -137,31 +162,37 @@ public class ViewIntentService extends IntentService {
             pinchListener.setView(v);
             pinchListener.setWindowManager(windowManager);
             scaleGestureDetector.onTouchEvent(event);
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN:
+            if(!scaleGestureDetector.isInProgress()) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
 
-                    initialX = params.x;
-                    initialY = params.y;
+                        initialX = params.x;
+                        initialY = params.y;
 
-                    initialTouchX = event.getRawX();
-                    initialTouchY = event.getRawY();
+                        initialTouchX = event.getRawX();
+                        initialTouchY = event.getRawY();
 
-                    lastAction = event.getAction();
-                    return true;
-                case MotionEvent.ACTION_UP:
-                    if (lastAction == MotionEvent.ACTION_DOWN) {
-                        //todo handle click
-                    }
-                    lastAction = event.getAction();
-                    return true;
-                case MotionEvent.ACTION_MOVE:
+                        lastAction = event.getAction();
+                        return false;
+                    case MotionEvent.ACTION_UP:
 
-                    params.x = initialX + (int) (event.getRawX() - initialTouchX);
-                    params.y = initialY + (int) (event.getRawY() - initialTouchY);
+                        lastAction = event.getAction();
+                        if(initialX!=params.x || initialY!=params.y)
+                            return true;
+                        else
+                            return false;
+                    case MotionEvent.ACTION_MOVE:
 
-                    windowManager.updateViewLayout(v, params);
-                    lastAction = event.getAction();
-                    return true;
+                        params.x = initialX + (int) (event.getRawX() - initialTouchX);
+                        params.y = initialY + (int) (event.getRawY() - initialTouchY);
+
+                        windowManager.updateViewLayout(v, params);
+                        lastAction = event.getAction();
+                        if(initialX!=params.x || initialY!=params.y)
+                            return true;
+                        else
+                            return false;
+                }
             }
             return false;
         }
@@ -194,11 +225,19 @@ public class ViewIntentService extends IntentService {
 
         public boolean onScale(ScaleGestureDetector detector) {
             float delta = detector.getCurrentSpan()/startingSpan;
+            int max = getDisplayWidth(windowManager);
+            int min = (int)((float)max *0.33f);
             WindowManager.LayoutParams params = (WindowManager.LayoutParams)view.getLayoutParams();
-            params.width *=delta;
-            params.height *=delta;
-            windowManager.updateViewLayout(view,params);
-            return true;
+            int newWidth = (int) (params.width*delta);
+            int newHeight =(int) (params.height*delta);
+            if(newWidth<=max && newWidth>=min) {
+                params.width =newWidth;
+                params.height =newHeight;
+                windowManager.updateViewLayout(view, params);
+                return true;
+            }else {
+                return false;
+            }
         }
 
         public void onScaleEnd(ScaleGestureDetector detector) {

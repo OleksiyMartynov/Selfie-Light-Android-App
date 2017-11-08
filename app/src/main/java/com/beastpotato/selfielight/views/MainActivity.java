@@ -26,6 +26,7 @@ public class MainActivity extends AppCompatActivity {
                 ViewIntentService.startToggleUI(MainActivity.this, isChecked);
             }
         });
+        toggleButton.setChecked(ViewIntentService.isActive());
 
     }
     public void checkDrawOverlayPermission() {
